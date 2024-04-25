@@ -61,7 +61,7 @@
         var response = await HttpClient.PostAsync(tokenEndpoint, new FormUrlEncodedContent(parameters));
         Response = response.Content.ToString();
 
-
+         
         if (response.IsSuccessStatusCode)
         {
             var tokenResponse = await response.Content.ReadFromJsonAsync<TokenResponse>();
