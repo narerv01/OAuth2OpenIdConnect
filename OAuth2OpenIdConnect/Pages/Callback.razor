@@ -1,0 +1,102 @@
+﻿@page "/callback"
+@using System.Text.Json
+@using System.Net.Http.Headers
+@inject HttpClient HttpClient
+@inject Services.CacheService CacheService
+@inject NavigationManager NavigationManager
+
+<h3>User Information</h3>
+<div>
+
+    <p>@ResponseUserInfo</p>
+
+    <p>@State</p>
+    <p>@Code</p>
+    <p>@RedirectUri</p>
+    <p>@ClientId</p>
+    <p>@ClientSecret</p>
+    <p>@CodeVerifier</p>
+
+    <p>@Response</p>
+</div>
+
+
+@code {
+
+    private string State { get; set; }
+    private string Code { get; set; }
+    private string RedirectUri { get; } = "http://localhost:5093/callback"; 
+    private string ClientId { get; } = "client_id"; 
+    private string ClientSecret { get; } = "Sm28YwEVlSPmhbQwD4l3EBo9XQjNPr3c"; 
+    private string CodeVerifier { get; set; }
+
+    private string Response { get; set; }
+    private string ResponseUserInfo { get; set; }
+
+
+    protected override void OnInitialized()
+    {
+        var uri = new Uri(NavigationManager.Uri);
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        State = query["state"];
+        Code = query["code"];
+        CodeVerifier = CacheService.GetFromCache(State);
+        ExchangeCodeForTokens(Code, RedirectUri, CodeVerifier, ClientId, ClientSecret);
+    }
+
+    private async Task ExchangeCodeForTokens(string code, string redirectUri, string codeVerifier, string clientId, string clientSecret)
+    {
+        var parameters = new Dictionary<string, string?>
+        {
+            { "grant_type", "authorization_code" },
+            { "code", code },
+            { "redirect_uri", redirectUri },
+            { "code_verifier", codeVerifier },
+            { "client_id", clientId },
+            { "client_secret", clientSecret }
+        };
+
+        var tokenEndpoint = "http://localhost:8080/realms/master/protocol/openid-connect/token";
+
+        var response = await HttpClient.PostAsync(tokenEndpoint, new FormUrlEncodedContent(parameters));
+        Response = response.Content.ToString();
+
+
+        if (response.IsSuccessStatusCode)
+        {
+            var tokenResponse = await response.Content.ReadFromJsonAsync<TokenResponse>();
+            await FetchUserInfo(tokenResponse.access_token);
+
+        }
+
+    }
+
+    private async Task FetchUserInfo(string accessToken)
+    {  
+            var httpClient = new HttpClient();
+            httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+            var userInfoEndpoint = "http://localhost:8080/realms/master/protocol/openid-connect/userinfo";
+            var response = await httpClient.GetAsync(userInfoEndpoint);
+            if (response.IsSuccessStatusCode)
+            {
+                var userInfo = await response.Content.ReadFromJsonAsync<UserInfo>();  
+            }
+    }
+
+
+
+    public class TokenResponse
+    {
+        public string access_token { get; set; }
+        public int expires_in { get; set; }
+        public string id_token { get; set; }
+        public string scope { get; set; }
+        public string token_type { get; set; }
+        public string refresh_token { get; set; }
+    }
+    public class UserInfo
+    {
+        public string Name { get; set; }
+        public string Email { get; set; }
+    }
+}

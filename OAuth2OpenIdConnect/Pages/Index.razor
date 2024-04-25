@@ -1,0 +1,76 @@
+﻿@page "/"
+@using Microsoft.AspNetCore.WebUtilities
+@using System.Security.Cryptography
+@using System.Text
+@inject Services.CacheService CacheService
+@inject NavigationManager NavigationManager
+
+<h3>Login</h3>
+
+<button @onclick="LoginClicked">Login with Keycloak</button>
+
+@code {
+    
+
+
+    private async Task LoginClicked()
+    { 
+        string clientId = "client_id";
+        string callback = "http://localhost:5093/callback";  
+        string state = Guid.NewGuid().ToString();
+        string codeVerifier = PKCEUtil.GenerateCodeVerifier();
+        string codeChallenge = PKCEUtil.GenerateCodeChallenge(codeVerifier);
+
+        // Store the code verifier in the cache
+        CacheService.AddToCache(state, codeVerifier);
+
+        // Construct parameters dictionary
+        var parameters = new Dictionary<string, string?> {
+        { "client_id", clientId },
+        { "scope", "openid email phone address profile" },
+        { "response_type", "code" },
+        { "redirect_uri", callback },
+        { "prompt", "login" },
+        { "state", state },
+        { "code_challenge_method", "S256" },  
+        { "code_challenge", codeChallenge }
+        };
+         
+        var authorizationUri = QueryHelpers.AddQueryString("http://localhost:8080/realms/master/protocol/openid-connect/auth", parameters); 
+        NavigationManager.NavigateTo(authorizationUri);
+    }
+
+
+
+    public static class PKCEUtil
+    {
+        public static string GenerateCodeVerifier()
+        {
+            using (var rng = RandomNumberGenerator.Create())
+            {
+                byte[] bytes = new byte[32];
+                rng.GetBytes(bytes);
+                return Base64UrlEncode(bytes);
+            }
+        }
+
+        public static string GenerateCodeChallenge(string codeVerifier)
+        {
+            using (var sha256 = SHA256.Create())
+            {
+                byte[] bytes = Encoding.UTF8.GetBytes(codeVerifier);
+                byte[] hashBytes = sha256.ComputeHash(bytes);
+                return Base64UrlEncode(hashBytes);
+            }
+        }
+
+        private static string Base64UrlEncode(byte[] bytes)
+        {
+            return Convert.ToBase64String(bytes)
+                .Replace('+', '-')
+                .Replace('/', '_')
+                .TrimEnd('=');
+        }
+    }
+
+}
